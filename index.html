@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>VAULT_09 // Case Opener</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="brand">VAULT<span>_09</span></div>
+    <div class="balance-pill">
+      <span class="label">BALANCE</span>
+      <span class="value" id="balanceVal">0</span>
+    </div>
+  </header>
+
+  <!-- Config screen shown until supabase keys are set -->
+  <div id="configNotice" class="config-notice hidden">
+    <div class="cn-inner">
+      <h2>Connect Supabase</h2>
+      <p>Open <code>js/config.js</code> and paste in your Supabase project URL and anon public key. Then run <code>sql/schema.sql</code> in the Supabase SQL editor to create your cases.</p>
+    </div>
+  </div>
+
+  <main id="app" class="app hidden">
+
+    <section class="case-select">
+      <h1 class="section-title">Select a Case</h1>
+      <div id="caseGrid" class="case-grid"></div>
+    </section>
+
+    <section id="openSection" class="open-section hidden">
+      <div class="open-header">
+        <button id="backBtn" class="back-btn">← Cases</button>
+        <h2 id="activeCaseName">—</h2>
+        <div class="open-price">Cost: <span id="activeCasePrice">0</span></div>
+      </div>
+
+      <div class="reel-wrap">
+        <div class="reel-marker"></div>
+        <div id="reel" class="reel"></div>
+      </div>
+
+      <div class="open-controls">
+        <button id="openBtn" class="open-btn">OPEN CASE</button>
+        <label class="fast-toggle">
+          <input type="checkbox" id="fastToggle" />
+          Fast open
+        </label>
+      </div>
+
+      <div id="resultBanner" class="result-banner hidden"></div>
+    </section>
+
+    <section class="inventory">
+      <div class="inv-header">
+        <h2 class="section-title">Inventory</h2>
+        <button id="sellAllBtn" class="sell-all-btn">Sell All</button>
+      </div>
+      <div id="inventoryGrid" class="inventory-grid">
+        <p class="empty-note">No items yet — open a case to get started.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="js/config.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
