@@ -1,9 +1,11 @@
 // ============================================================
-// VAULT_09 — Case Opener game logic
-// All currency here is virtual/local only. Nothing is real money.
+// VAULT_09 — Case Opener game logic (Supabase-backed balance + inventory)
 // ============================================================
 (function () {
   "use strict";
+  const V = window.Vault;
+  if (!V.configured) return;
+  const sb = V.supabase;
 
   const RARITY_LABEL = {
     consumer: "Consumer", industrial: "Industrial", restricted: "Restricted",
@@ -11,65 +13,22 @@
   };
 
   const state = {
-    supabase: null,
     cases: [],
-    caseItemsByCase: {}, // caseId -> [{skin, weight}]
+    caseItemsByCase: {},
     activeCase: null,
-    balance: 0,
-    inventory: [], // [{id, skin, obtainedAt}]
+    inventory: [],
     spinning: false,
   };
 
   const el = (id) => document.getElementById(id);
 
-  /* ---------------- Storage ---------------- */
-  function loadLocal() {
-    const bal = localStorage.getItem("vault09_balance");
-    state.balance = bal === null ? STARTING_BALANCE : Number(bal);
-    const inv = localStorage.getItem("vault09_inventory");
-    state.inventory = inv ? JSON.parse(inv) : [];
-  }
-  function saveLocal() {
-    localStorage.setItem("vault09_balance", String(state.balance));
-    localStorage.setItem("vault09_inventory", JSON.stringify(state.inventory));
-  }
-  function setBalance(v) {
-    state.balance = Math.max(0, v);
-    el("balanceVal").textContent = state.balance.toLocaleString();
-    saveLocal();
-  }
-
-  /* ---------------- Toast ---------------- */
-  let toastTimer = null;
-  function toast(msg) {
-    const t = el("toast");
-    t.textContent = msg;
-    t.classList.remove("hidden");
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.add("hidden"), 2400);
-  }
-
-  /* ---------------- Supabase ---------------- */
-  async function initSupabase() {
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      el("configNotice").classList.remove("hidden");
-      return false;
-    }
-    state.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    return true;
-  }
-
+  /* ---------------- Data loading ---------------- */
   async function fetchCases() {
-    const { data: cases, error: caseErr } = await state.supabase
-      .from("cases")
-      .select("*")
-      .order("sort_order", { ascending: true });
-    if (caseErr) { toast("Error loading cases — check console"); console.error(caseErr); return; }
+    const { data: cases, error: caseErr } = await sb.from("cases").select("*").order("sort_order", { ascending: true });
+    if (caseErr) { V.toast("Error loading cases"); console.error(caseErr); return; }
 
-    const { data: items, error: itemErr } = await state.supabase
-      .from("case_items")
-      .select("case_id, weight, skins(*)");
-    if (itemErr) { toast("Error loading case items — check console"); console.error(itemErr); return; }
+    const { data: items, error: itemErr } = await sb.from("case_items").select("case_id, weight, skins(*)");
+    if (itemErr) { V.toast("Error loading case items"); console.error(itemErr); return; }
 
     state.cases = cases || [];
     state.caseItemsByCase = {};
@@ -79,12 +38,22 @@
     });
   }
 
-  /* ---------------- Rendering: case grid ---------------- */
+  async function fetchInventory() {
+    const { data, error } = await sb
+      .from("inventory")
+      .select("id, obtained_at, skins(*)")
+      .eq("user_id", V.profile.id)
+      .order("obtained_at", { ascending: false });
+    if (error) { console.error(error); return; }
+    state.inventory = (data || []).map((r) => ({ id: r.id, skin: r.skins, obtainedAt: r.obtained_at }));
+  }
+
+  /* ---------------- Case grid ---------------- */
   function renderCaseGrid() {
     const grid = el("caseGrid");
     grid.innerHTML = "";
     if (!state.cases.length) {
-      grid.innerHTML = `<p class="empty-note">No cases found. Did you run sql/schema.sql in your Supabase project?</p>`;
+      grid.innerHTML = `<p class="empty-note">No cases found. Did you run sql/schema.sql?</p>`;
       return;
     }
     state.cases.forEach((c) => {
@@ -102,7 +71,6 @@
     });
   }
 
-  /* ---------------- Case detail / opening ---------------- */
   function openCaseView(c) {
     state.activeCase = c;
     el("activeCaseName").textContent = c.name;
@@ -113,9 +81,7 @@
     el("openSection").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  function getPool(caseId) {
-    return state.caseItemsByCase[caseId] || [];
-  }
+  function getPool(caseId) { return state.caseItemsByCase[caseId] || []; }
 
   function buildIdleReel(c) {
     const reel = el("reel");
@@ -127,9 +93,7 @@
       reel.innerHTML = `<p class="empty-note" style="padding:0 16px;">This case has no items configured yet.</p>`;
       return;
     }
-    // show a static preview strip of possible drops
-    const preview = shuffle([...pool]).slice(0, 10);
-    preview.forEach((p) => reel.appendChild(buildReelItem(p.skin)));
+    shuffle([...pool]).slice(0, 10).forEach((p) => reel.appendChild(buildReelItem(p.skin)));
   }
 
   function buildReelItem(skin) {
@@ -165,10 +129,10 @@
     const c = state.activeCase;
     if (!c || state.spinning) return;
     const pool = getPool(c.id);
-    if (!pool.length) { toast("This case has no items configured."); return; }
-    if (state.balance < c.price) { toast("Not enough funds for this case."); return; }
+    if (!pool.length) { V.toast("This case has no items configured."); return; }
+    if (V.profile.balance < c.price) { V.toast("Not enough funds for this case."); return; }
 
-    setBalance(state.balance - c.price);
+    await V.updateBalance(-c.price);
     state.spinning = true;
     el("openBtn").disabled = true;
     el("resultBanner").classList.add("hidden");
@@ -177,10 +141,14 @@
     const fast = el("fastToggle").checked;
     await spinReel(pool, won, fast);
 
-    // add to inventory
-    const entry = { id: crypto.randomUUID(), skin: won, obtainedAt: Date.now() };
-    state.inventory.unshift(entry);
-    saveLocal();
+    const { data, error } = await sb
+      .from("inventory")
+      .insert({ user_id: V.profile.id, skin_id: won.id })
+      .select("id, obtained_at")
+      .single();
+    if (error) console.error(error);
+
+    state.inventory.unshift({ id: data ? data.id : crypto.randomUUID(), skin: won, obtainedAt: data ? data.obtained_at : Date.now() });
     renderInventory();
     showResult(won);
 
@@ -191,26 +159,23 @@
   function spinReel(pool, winningSkin, fast) {
     return new Promise((resolve) => {
       const reel = el("reel");
-      const ITEM_W = 130; // width + gap
+      const ITEM_W = 130;
       const REEL_LEN = fast ? 24 : 60;
       const WIN_INDEX = fast ? 18 : 50;
 
       reel.innerHTML = "";
       const sequence = [];
       for (let i = 0; i < REEL_LEN; i++) {
-        if (i === WIN_INDEX) sequence.push(winningSkin);
-        else sequence.push(weightedPick(pool));
+        sequence.push(i === WIN_INDEX ? winningSkin : weightedPick(pool));
       }
       sequence.forEach((skin) => reel.appendChild(buildReelItem(skin)));
 
       const wrapWidth = reel.parentElement.offsetWidth;
       const targetOffset = WIN_INDEX * ITEM_W + ITEM_W / 2 - wrapWidth / 2;
-      // slight random jitter within the item so it doesn't always land dead-center
       const jitter = (Math.random() - 0.5) * (ITEM_W * 0.4);
 
       reel.style.transition = "none";
       reel.style.transform = "translateX(0)";
-      // force reflow
       void reel.offsetWidth;
 
       const duration = fast ? 1400 : 4200;
@@ -257,54 +222,48 @@
           <span class="ic-sell" data-id="${entry.id}">Sell</span>
         </div>
       `;
-      card.querySelector(".ic-sell").onclick = (e) => {
-        e.stopPropagation();
-        sellItem(entry.id);
-      };
+      card.querySelector(".ic-sell").onclick = (e) => { e.stopPropagation(); sellItem(entry.id); };
       grid.appendChild(card);
     });
   }
 
-  function sellItem(entryId) {
+  async function sellItem(entryId) {
     const idx = state.inventory.findIndex((e) => e.id === entryId);
     if (idx === -1) return;
     const [removed] = state.inventory.splice(idx, 1);
-    setBalance(state.balance + removed.skin.value);
-    saveLocal();
     renderInventory();
-    toast(`Sold ${removed.skin.name} for $${removed.skin.value.toLocaleString()}`);
+    const { error } = await sb.from("inventory").delete().eq("id", entryId);
+    if (error) console.error(error);
+    await V.updateBalance(removed.skin.value);
+    V.toast(`Sold ${removed.skin.name} for $${removed.skin.value.toLocaleString()}`);
   }
 
-  function sellAll() {
+  async function sellAll() {
     if (!state.inventory.length) return;
     const total = state.inventory.reduce((s, e) => s + e.skin.value, 0);
+    const ids = state.inventory.map((e) => e.id);
     state.inventory = [];
-    setBalance(state.balance + total);
-    saveLocal();
     renderInventory();
-    toast(`Sold all items for $${total.toLocaleString()}`);
+    const { error } = await sb.from("inventory").delete().in("id", ids);
+    if (error) console.error(error);
+    await V.updateBalance(total);
+    V.toast(`Sold all items for $${total.toLocaleString()}`);
   }
 
   /* ---------------- Init ---------------- */
-  async function init() {
-    loadLocal();
-    setBalance(state.balance);
-    renderInventory();
-
-    const ok = await initSupabase();
-    if (!ok) return;
-
-    el("app").classList.remove("hidden");
+  document.addEventListener("vault:login", async () => {
     await fetchCases();
     renderCaseGrid();
+    await fetchInventory();
+    renderInventory();
+  });
 
+  document.addEventListener("DOMContentLoaded", () => {
     el("backBtn").onclick = () => {
       el("openSection").classList.add("hidden");
       window.scrollTo({ top: 0, behavior: "smooth" });
     };
     el("openBtn").onclick = handleOpen;
     el("sellAllBtn").onclick = sellAll;
-  }
-
-  document.addEventListener("DOMContentLoaded", init);
+  });
 })();
