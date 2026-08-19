@@ -40,8 +40,15 @@
   <!-- Config screen shown until supabase keys are set -->
   <div id="configNotice" class="config-notice hidden">
     <div class="cn-inner">
-      <h2>Connect Supabase</h2>
-      <p>Open <code>js/config.js</code> and paste in your Supabase project URL and anon public key. Then run <code>sql/schema.sql</code> and <code>sql/auth_and_economy.sql</code> in the Supabase SQL editor.</p>
+      <h2>Setup Instructions</h2>
+      <ol style="text-align: left; display: inline-block;">
+        <li>Open <code>js/config.js</code> and paste your Supabase project URL and anon public key.</li>
+        <li>Run <code>sql/schema.sql</code> and <code>sql/auth_and_economy.sql</code> in Supabase SQL Editor.</li>
+        <li>In Supabase, go to <strong>Authentication → Providers</strong> and enable <strong>GitHub</strong> and <strong>Discord</strong>.</li>
+        <li>Paste GitHub and Discord OAuth credentials into each provider.</li>
+        <li>Go to <strong>Authentication → URL Configuration → Redirect URLs</strong> and add:<br><code>https://pinkfrog2.github.io/csweb/</code></li>
+        <li>Done! The app will show GitHub and Discord login buttons.</li>
+      </ol>
     </div>
   </div>
 
