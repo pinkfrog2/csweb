@@ -1,6 +1,6 @@
 // ============================================================
-// Auth: Google sign-in via Supabase, profile load, shared balance updater,
-// and the daily-bonus economy hook.
+// Auth: GitHub & Discord sign-in via Supabase, profile load, 
+// shared balance updater, and the daily-bonus economy hook.
 // ============================================================
 (function () {
   const V = window.Vault;
@@ -17,8 +17,6 @@
     if (balEl) balEl.textContent = bal.toLocaleString();
   };
 
-  // Central place every earning/spending path routes through, so the UI,
-  // the DB, and every module (cases, roulette, chat) stay in sync.
   V.updateBalance = async function (delta) {
     if (!V.profile) return null;
     const newBal = Math.max(0, V.profile.balance + delta);
@@ -34,7 +32,6 @@
     let { data, error } = await sb.from("profiles").select("*").eq("id", userId).single();
     if (!error && data) return data;
 
-    // Fallback in case the DB trigger hasn't been created yet
     const { data: userData } = await sb.auth.getUser();
     const u = userData.user;
     const insertRes = await sb.from("profiles").insert({
@@ -102,9 +99,15 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    el("googleLoginBtn").onclick = () => {
+    el("githubLoginBtn").onclick = () => {
       sb.auth.signInWithOAuth({
-        provider: "google",
+        provider: "github",
+        options: { redirectTo: window.location.origin + window.location.pathname },
+      });
+    };
+    el("discordLoginBtn").onclick = () => {
+      sb.auth.signInWithOAuth({
+        provider: "discord",
         options: { redirectTo: window.location.origin + window.location.pathname },
       });
     };
